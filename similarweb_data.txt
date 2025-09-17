@@ -1,0 +1,1 @@
+{"http.www.mophouse.com": {"desktopPersent": "N/A", "mobilePercent": "N/A", "visits": 0.0, "visits_per_visitor": 0.0, "users_tab": 0.0, "pages-per-visit": 0.0, "avg_visit_duration": "N/A", "bounce_rate": "N/A"}}
