@@ -101,29 +101,29 @@ def search_and_scrape_website_data(driver, website_to_search, data_url_template)
         driver.get(target_data_page_url)
         time.sleep(random.uniform(3, 7)) # 额外等待数据页面加载
 
-        # 等待网站性能数据页面加载
+        # 等待网站性能数据页面加载（使用更长的固定等待时间，替代不稳定的元素检测）
         print("正在等待网站性能数据页面加载...")
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.XPATH, "//div[@class='BaseFlex-bjWZGo FlexRow-hsoCCV TopPageWidgetsRow-diqVyP TopPageWidgetsRowWrap-fLcndQ dYkKBh iCsmVo cXClbx gHnUto']"))
-        )
-        print("网站数据页面加载完成，尝试提取 desktopPersent 和 mobilePercent 数据...")
-        time.sleep(random.uniform(3, 7)) # 额外随机等待，确保所有动态内容都渲染完成
+        time.sleep(random.uniform(8, 12)) # 增加等待时间，确保页面和动态内容完全加载
+        print("等待完成，尝试提取 desktopPersent 和 mobilePercent 数据...")
 
         # --- desktopPersent 和 mobilePercent 的提取和验证 ---
         try:
-            desktop_xpath = "(//span[@class='LabelValue-bIRZky bbhWVt'])[1]"
+            # 尝试多种选择器策略以提高稳定性
+            desktop_xpath = "(//span[contains(@class, 'LabelValue')])[1]"
             desktop_element = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.XPATH, desktop_xpath))
             )
             desktop_percent_str = desktop_element.text.strip()
+            print(f"提取到桌面端数据: {desktop_percent_str}")
             if desktop_percent_str.endswith('%') and desktop_percent_str[:-1].strip().upper() != "N/A":
                 desktop_percent = float(desktop_percent_str[:-1])
             
-            mobile_xpath = "(//span[@class='LabelValue-bIRZky bbhWVt'])[2]"
+            mobile_xpath = "(//span[contains(@class, 'LabelValue')])[2]"
             mobile_element = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.XPATH, mobile_xpath))
             )
             mobile_percent_str = mobile_element.text.strip()
+            print(f"提取到移动端数据: {mobile_percent_str}")
             if mobile_percent_str.endswith('%') and mobile_percent_str[:-1].strip().upper() != "N/A":
                 mobile_percent = float(mobile_percent_str[:-1])
             
@@ -268,18 +268,99 @@ def get_random_user_agent():
     ]
     return random.choice(user_agents)
 
+def get_first_url_from_file(urls_file_path):
+    """
+    读取urls.txt文件的第一行URL
+    返回URL字符串，如果文件为空或不存在返回None
+    """
+    try:
+        with open(urls_file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            if lines:
+                return lines[0].strip()
+            return None
+    except FileNotFoundError:
+        print(f"错误：文件 {urls_file_path} 不存在")
+        return None
+    except Exception as e:
+        print(f"读取URL文件时发生错误: {e}")
+        return None
+
+def remove_first_url_from_file(urls_file_path):
+    """
+    删除urls.txt文件的第一行URL
+    """
+    try:
+        with open(urls_file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # 写回剩余的行（跳过第一行）
+        with open(urls_file_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines[1:])
+        
+        remaining_count = len(lines) - 1
+        print(f"已从URL列表中删除该URL，剩余 {remaining_count} 个URL待处理")
+        return True
+    except Exception as e:
+        print(f"删除URL时发生错误: {e}")
+        return False
+
+def count_remaining_urls(urls_file_path):
+    """
+    统计urls.txt中剩余的URL数量
+    """
+    try:
+        with open(urls_file_path, 'r', encoding='utf-8') as f:
+            return len(f.readlines())
+    except:
+        return 0
+
+def check_duplicate_data(output_file_path):
+    """
+    检查最后三个JSON数据的desktopPersent和visits是否完全相同
+    如果相同则返回True（表示检测到重复），否则返回False
+    """
+    try:
+        with open(output_file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # 至少需要3条记录才能检查
+        if len(lines) < 3:
+            return False
+        
+        # 获取最后3条记录
+        last_three = []
+        for line in lines[-3:]:
+            if line.strip():
+                data = json.loads(line)
+                # 获取第一个（也是唯一）的键值对
+                url = list(data.keys())[0]
+                values = data[url]
+                last_three.append({
+                    'desktopPersent': values.get('desktopPersent'),
+                    'visits': values.get('visits')
+                })
+        
+        # 检查最后三个是否完全相同
+        if len(last_three) == 3:
+            if (last_three[0]['desktopPersent'] == last_three[1]['desktopPersent'] == last_three[2]['desktopPersent'] and
+                last_three[0]['visits'] == last_three[1]['visits'] == last_three[2]['visits']):
+                return True
+        
+        return False
+    except Exception as e:
+        print(f"检查重复数据时出错: {e}")
+        return False
+
 if __name__ == "__main__":
     chrome_driver_path = r"E:\chromedriver-win64\chromedriver-win64\chromedriver.exe"
     initial_entry_url = "https://dash.3ue.com/zh-Hans/#/page/m/home"
     your_username = "sloth" 
     your_password = "b35iNGpgZcrd!Ge"
     
-    # 查询的网站列表
-    target_websites = [
-       "http.www.mophouse.com"
-        # 添加更多您需要查询的网站，例如："google.com", "bing.com"
-        # 注意：gemini.google.com, claude.ai, grok.com 可能在 SimilarWeb 上没有直接的公开数据，抓取可能会失败。
-    ]
+    # URLs文件路径
+    urls_file_path = r"E:\aiUrlDataBySimilarWeb\urls.txt"
+    output_file_path = r"E:\aiUrlDataBySimilarWeb\similarweb_data.txt"
 
     # SimilarWeb数据页面的URL模板，使用{website_name}作为占位符
     base_data_url_template = "https://sim.3ue.com/#/digitalsuite/websiteanalysis/overview/website-performance/*/999/2025.01-2025.08?webSource=Total&key={website_name}"
@@ -290,22 +371,41 @@ if __name__ == "__main__":
         driver_instance = initialize_browser_and_prepare_for_search(initial_entry_url, your_username, your_password, chrome_driver_path)
 
         if driver_instance:
-            print("浏览器初始化和准备完成。开始批量导航并抓取 desktopPersent、mobilePercent、visits、visits_per_visitor、users_tab、pages-per-visit、avg_visit_duration 和 bounce_rate 数据...")
-            all_results = {}
-            output_file_path = r"E:\aiUrlDataBySimilarWeb\similarweb_data.txt"
-            # 在开始批量抓取前清空文件内容
+            print("浏览器初始化和准备完成。开始循环抓取数据...")
+            
+            # 统计初始URL数量
+            total_urls = count_remaining_urls(urls_file_path)
+            print(f"URL列表中共有 {total_urls} 个网站待抓取")
+            
+            # 在开始批量抓取前清空输出文件内容
             with open(output_file_path, 'w', encoding='utf-8') as f:
                 f.write("") 
-            print(f"已清空或创建输出文件: {output_file_path}")
+            print(f"已清空或创建输出文件: {output_file_path}\n")
 
+            processed_count = 0
             start_time = time.time() # 记录开始时间
-            for i, website_name in enumerate(target_websites):
-                print(f"\n--- 正在导航并抓取第 {i+1} 个网站: {website_name} ---")
+            
+            # 循环处理：读取第一个URL -> 抓取 -> 删除
+            while True:
+                # 读取第一个URL
+                current_url = get_first_url_from_file(urls_file_path)
                 
-                # driver_instance.get("https://sim.3ue.com/#/digitalsuite/home") # 移除这行，避免重新导航到首页
-                time.sleep(random.uniform(3, 5)) # 等待页面加载
+                if current_url is None:
+                    print("\n所有URL已处理完成！")
+                    break
+                
+                processed_count += 1
+                remaining = count_remaining_urls(urls_file_path)
+                print(f"\n{'='*60}")
+                print(f"正在处理第 {processed_count} 个网站: {current_url}")
+                print(f"剩余待处理: {remaining - 1} 个")
+                print(f"{'='*60}")
+                
+                time.sleep(random.uniform(3, 5)) # 每次请求间随机延时
 
-                desktop_percent_str, mobile_percent_str, visits_data, visits_per_visitor_data, users_tab_data, pages_per_visit_data, avg_visit_duration_data, bounce_rate_data = search_and_scrape_website_data(driver_instance, website_name, base_data_url_template)
+                # 抓取数据
+                desktop_percent_str, mobile_percent_str, visits_data, visits_per_visitor_data, users_tab_data, pages_per_visit_data, avg_visit_duration_data, bounce_rate_data = search_and_scrape_website_data(driver_instance, current_url, base_data_url_template)
+                
                 if desktop_percent_str is not None and mobile_percent_str is not None:
                     current_website_result = {
                         "desktopPersent": desktop_percent_str,
@@ -317,29 +417,50 @@ if __name__ == "__main__":
                         "avg_visit_duration": avg_visit_duration_data,
                         "bounce_rate": bounce_rate_data
                     }
-                    all_results[website_name] = current_website_result # 也更新到all_results字典中
-                    print(f"成功抓取 {website_name} 的数据：桌面端 {desktop_percent_str}，移动端 {mobile_percent_str}，Visits：{visits_data}，每次访客访问量：{visits_per_visitor_data:.2f}，已消除重叠的受众：{users_tab_data}，页面数/访问：{pages_per_visit_data}，访问持续时间：{avg_visit_duration_data}，跳出率：{bounce_rate_data}")
+                    
+                    print(f"✓ 成功抓取 {current_url} 的数据：")
+                    print(f"  - 桌面端: {desktop_percent_str}, 移动端: {mobile_percent_str}")
+                    print(f"  - Visits: {visits_data}, 每次访客访问量: {visits_per_visitor_data:.2f}")
+                    print(f"  - 已消除重叠的受众: {users_tab_data}, 页面数/访问: {pages_per_visit_data}")
+                    print(f"  - 访问持续时间: {avg_visit_duration_data}, 跳出率: {bounce_rate_data}")
 
                     # 将当前网站的结果保存到文件
                     with open(output_file_path, 'a', encoding='utf-8') as f:
-                        json.dump({website_name: current_website_result}, f, ensure_ascii=False)
+                        json.dump({current_url: current_website_result}, f, ensure_ascii=False)
                         f.write('\n')
-                    print(f"[{website_name}] 结果已保存到文件。")
+                    print(f"✓ [{current_url}] 结果已保存到文件")
+                    
+                    # 抓取成功后，从urls.txt中删除该URL
+                    remove_first_url_from_file(urls_file_path)
+                    
+                    # 检查最后三个数据是否重复
+                    if check_duplicate_data(output_file_path):
+                        print("\n" + "!"*60)
+                        print("⚠️  警告：检测到连续三个网站的数据完全相同！")
+                        print("这可能表示抓取出现了问题，程序将自动中断。")
+                        print("!"*60)
+                        break
                 else:
-                    print(f"抓取 {website_name} 的 desktopPersent、mobilePercent、visits、visits_per_visitor、users_tab、pages-per-visit、avg_visit_duration 或 bounce_rate 数据失败。")
+                    print(f"✗ 抓取 {current_url} 数据失败，该URL将保留在列表中等待下次重试")
             
             end_time = time.time() # 记录结束时间
             total_time = end_time - start_time
-            print("\n所有批量抓取完成！")
-            print("所有结果:", all_results)
-            print(f"总共耗时: {total_time:.2f} 秒")
+            print(f"\n{'='*60}")
+            print(f"所有抓取任务完成！")
+            print(f"成功处理: {processed_count} 个网站")
+            print(f"总耗时: {total_time:.2f} 秒 ({total_time/60:.2f} 分钟)")
+            print(f"{'='*60}")
         else:
             print("浏览器初始化或登录失败，无法进行数据抓取。")
 
+    except KeyboardInterrupt:
+        print("\n\n用户中断程序，正在保存进度并退出...")
     except Exception as e:
         print(f"主程序运行发生错误: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         if driver_instance:
-            print("脚本运行结束，浏览器将自动关闭。等待 20 分钟...")
-            time.sleep(1200) # 等待20分钟 (20 * 60 秒)
+            print("\n脚本运行结束，浏览器将自动关闭。等待 5 秒...")
+            time.sleep(5) # 缩短等待时间到5秒
             driver_instance.quit()
