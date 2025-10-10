@@ -8,8 +8,9 @@ from selenium.webdriver.common.keys import Keys # 导入Keys用于模拟键盘�
 import time
 from selenium.common.exceptions import TimeoutException # 导入TimeoutException
 import json # 导入json模块
+from webdriver_manager.chrome import ChromeDriverManager # 自动管理ChromeDriver
 
-def initialize_browser_and_prepare_for_search(initial_entry_url, username, password, chrome_driver_path):
+def initialize_browser_and_prepare_for_search(initial_entry_url, username, password):
     # 配置 Chrome 选项，添加反反爬措施
     options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={get_random_user_agent()}') # 伪装User-Agent
@@ -19,7 +20,8 @@ def initialize_browser_and_prepare_for_search(initial_entry_url, username, passw
     options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"]) # 禁用DevTools listening的日志和自动化提示
     options.add_experimental_option('useAutomationExtension', False) # 禁用自动化扩展
 
-    service = Service(executable_path=chrome_driver_path)
+    # 使用 webdriver-manager 自动下载和管理 ChromeDriver
+    service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
     # 移除 WebDriver 标记，避免被识别
@@ -353,7 +355,7 @@ def check_duplicate_data(output_file_path):
         return False
 
 if __name__ == "__main__":
-    chrome_driver_path = r"E:\chromedriver-win64\chromedriver-win64\chromedriver.exe"
+    # chrome_driver_path = r"E:\chromedriver-win64\chromedriver-win64\chromedriver.exe"  # 已改用自动管理，无需手动指定
     initial_entry_url = "https://dash.3ue.com/zh-Hans/#/page/m/home"
     your_username = "sloth" 
     your_password = "b35iNGpgZcrd!Ge"
@@ -368,7 +370,7 @@ if __name__ == "__main__":
     driver_instance = None
     try:
         print("正在启动浏览器并准备进行网站搜索...")
-        driver_instance = initialize_browser_and_prepare_for_search(initial_entry_url, your_username, your_password, chrome_driver_path)
+        driver_instance = initialize_browser_and_prepare_for_search(initial_entry_url, your_username, your_password)
 
         if driver_instance:
             print("浏览器初始化和准备完成。开始循环抓取数据...")
