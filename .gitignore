@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sensitive files - Credentials
+*.json
+!package.json
+!package-lock.json
+
+# Chrome profile data
+chrome_profile/
+
+# Data files (optional - uncomment if needed)
+# *.xlsx
+# *.txt
+# *.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+

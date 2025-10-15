@@ -8,68 +8,232 @@ from selenium.webdriver.common.keys import Keys # 导入Keys用于模拟键盘�
 import time
 from selenium.common.exceptions import TimeoutException # 导入TimeoutException
 import json # 导入json模块
+import os # 导入os模块
 from webdriver_manager.chrome import ChromeDriverManager # 自动管理ChromeDriver
+import undetected_chromedriver as uc # 绕过Cloudflare检测
+import sys
+import io
 
-def initialize_browser_and_prepare_for_search(initial_entry_url, username, password):
-    # 配置 Chrome 选项，添加反反爬措施
-    options = webdriver.ChromeOptions()
+# 设置控制台输出编码为 UTF-8，避免 Windows 下的编码问题
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# Cookie文件路径
+COOKIE_FILE = 'cookies.json'
+
+def wait_for_cloudflare_bypass(driver, timeout=30):
+    """
+    检测并等待 Cloudflare 验证完成
+    返回: True 表示已绕过，False 表示仍被拦截
+    """
+    print("🔍 检查是否存在 Cloudflare 验证...")
+    
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            # 检查页面标题和内容
+            page_source = driver.page_source.lower()
+            page_title = driver.title.lower()
+            
+            # Cloudflare 特征检测
+            cloudflare_indicators = [
+                'cloudflare' in page_title,
+                'checking your browser' in page_source,
+                'just a moment' in page_source,
+                'please wait' in page_source and 'cloudflare' in page_source,
+                'verify you are human' in page_source
+            ]
+            
+            if any(cloudflare_indicators):
+                print(f"⏳ 检测到 Cloudflare 验证，等待自动绕过... ({int(time.time() - start_time)}秒)")
+                time.sleep(2)
+                continue
+            else:
+                print("✅ Cloudflare 验证已绕过（或不存在）")
+                return True
+                
+        except Exception as e:
+            print(f"⚠️  检测过程出错: {e}")
+            time.sleep(2)
+    
+    print("⚠️  Cloudflare 验证超时，可能需要手动操作")
+    return False
+
+def load_cookies_from_file(driver, domain_url):
+    """
+    从文件加载Cookie到WebDriver（适配浏览器扩展导出的格式）
+    返回: True表示成功，False表示失败
+    """
+    if not os.path.exists(COOKIE_FILE):
+        print(f"⚠️  Cookie文件不存在: {COOKIE_FILE}")
+        return False
+    
+    try:
+        # 必须先访问目标域名
+        driver.get(domain_url)
+        time.sleep(2)
+        
+        # 读取Cookie文件
+        with open(COOKIE_FILE, 'r', encoding='utf-8') as f:
+            cookies = json.load(f)
+        
+        # 转换并添加Cookie
+        added_count = 0
+        for cookie in cookies:
+            try:
+                # 转换浏览器扩展导出的Cookie格式到Selenium格式
+                selenium_cookie = {
+                    'name': cookie['name'],
+                    'value': cookie['value'],
+                    'domain': cookie['domain'],
+                    'path': cookie.get('path', '/'),
+                    'secure': cookie.get('secure', False),
+                    'httpOnly': cookie.get('httpOnly', False),
+                }
+                
+                # 处理过期时间（expirationDate是Unix时间戳）
+                if 'expirationDate' in cookie:
+                    selenium_cookie['expiry'] = int(cookie['expirationDate'])
+                
+                # sameSite处理
+                if 'sameSite' in cookie and cookie['sameSite'] != 'unspecified':
+                    selenium_cookie['sameSite'] = cookie['sameSite']
+                
+                driver.add_cookie(selenium_cookie)
+                added_count += 1
+            except Exception as e:
+                print(f"⚠️  添加Cookie失败 ({cookie.get('name', 'unknown')}): {e}")
+                continue
+        
+        print(f"✓ 成功加载 {added_count}/{len(cookies)} 个Cookie")
+        return added_count > 0
+    except Exception as e:
+        print(f"❌ 加载Cookie失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def save_cookies_to_file(driver):
+    """
+    保存当前浏览器的Cookie到文件（Selenium格式）
+    """
+    try:
+        cookies = driver.get_cookies()
+        with open(COOKIE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cookies, f, indent=2, ensure_ascii=False)
+        print(f"✓ Cookie已保存到: {COOKIE_FILE} (共{len(cookies)}个)")
+        return True
+    except Exception as e:
+        print(f"❌ 保存Cookie失败: {e}")
+        return False
+
+def initialize_browser_and_prepare_for_search(initial_entry_url, username, password, use_cookies=True):
+    # 配置 Chrome 选项（undetected_chromedriver 会自动添加反检测措施）
+    options = uc.ChromeOptions()
     options.add_argument(f'user-agent={get_random_user_agent()}') # 伪装User-Agent
-    # options.add_argument('--headless')  # 无头模式，不显示浏览器界面
-    # options.add_argument('--disable-gpu') # 禁用GPU，无头模式下可能需要
-    options.add_argument('--start-maximized') # 启动时最大化窗口，有时有助于定位元素
-    options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"]) # 禁用DevTools listening的日志和自动化提示
-    options.add_experimental_option('useAutomationExtension', False) # 禁用自动化扩展
-
-    # 使用 webdriver-manager 自动下载和管理 ChromeDriver
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-
-    # 移除 WebDriver 标记，避免被识别
+    # options.add_argument('--headless=new')  # 无头模式（新版语法）
+    options.add_argument('--start-maximized') # 启动时最大化窗口
+    options.add_argument('--disable-blink-features=AutomationControlled') # 禁用自动化控制特征
+    
+    # 添加更多随机性和真实性
+    options.add_argument('--disable-dev-shm-usage') # 解决资源限制
+    options.add_argument('--no-sandbox') # 绕过操作系统安全模型
+    options.add_argument(f'--window-size={random.choice(["1920,1080", "1366,768", "1440,900"])}') # 随机窗口大小
+    
+    # 使用 undetected_chromedriver（自动绕过检测）
+    driver = uc.Chrome(options=options, version_main=None)  # version_main=None 自动检测Chrome版本
+    
+    # 设置随机的页面加载超时
+    driver.set_page_load_timeout(60)
+    
+    # 额外的反检测措施（虽然 uc 已经做了很多，但多一层保险）
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
+            // 覆盖 navigator.webdriver
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
-            })
+            });
+            
+            // 覆盖 chrome 对象
+            window.chrome = {
+                runtime: {}
+            };
+            
+            // 覆盖 permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
         """
     })
 
     try:
-        driver.get(initial_entry_url) # 首先访问入口URL (dash.3ue.com的首页)
-        time.sleep(random.uniform(3, 7))
-
-        # --- 处理登录界面 ---
-        if "login" in driver.current_url.lower() or "登录" in driver.title:
-            print("检测到登录界面，正在尝试登录...")
+        # --- 尝试使用Cookie登录 ---
+        cookie_loaded = False
+        if use_cookies and os.path.exists(COOKIE_FILE):
+            print("🍪 检测到Cookie文件，尝试使用Cookie登录...")
+            cookie_loaded = load_cookies_from_file(driver, initial_entry_url)
             
-            username_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//input[@placeholder='请输入用户名']"))
-            )
-            username_field.send_keys(username)
-            # print("已输入用户名") # 移除详细打印
+            if cookie_loaded:
+                # 刷新页面使Cookie生效
+                driver.refresh()
+                time.sleep(random.uniform(3, 5))
+                
+                # 等待 Cloudflare 验证（如果有）
+                wait_for_cloudflare_bypass(driver, timeout=30)
+                
+                # 检查是否还在登录页面
+                if "login" not in driver.current_url.lower() and "登录" not in driver.title:
+                    print("✅ Cookie登录成功！跳过账号密码登录。")
+                else:
+                    print("⚠️  Cookie可能已过期，将使用账号密码登录...")
+                    cookie_loaded = False
+        
+        # --- 如果Cookie登录失败，使用账号密码登录 ---
+        if not cookie_loaded:
+            driver.get(initial_entry_url)
+            time.sleep(random.uniform(3, 7))
+            
+            # 检查并等待 Cloudflare 验证
+            wait_for_cloudflare_bypass(driver, timeout=30)
 
-            password_field = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//input[@placeholder='密码']"))
-            )
-            password_field.send_keys(password)
-            # print("已输入密码") # 移除详细打印
-
-            login_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(., '登录')] | //span[contains(., '登录')] "))
-            )
-            login_button.click()
-            # print("已点击登录按钮") # 移除详细打印
-
-            time.sleep(random.uniform(5, 10)) # 随机延时等待页面跳转和数据加载
             if "login" in driver.current_url.lower() or "登录" in driver.title:
-                print("登录失败或页面未正确跳转，请检查用户名和密码。")
-                return None
+                print("检测到登录界面，正在使用账号密码登录...")
+                
+                username_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@placeholder='请输入用户名']"))
+                )
+                username_field.send_keys(username)
+
+                password_field = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@placeholder='密码']"))
+                )
+                password_field.send_keys(password)
+
+                login_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., '登录')] | //span[contains(., '登录')] "))
+                )
+                login_button.click()
+
+                time.sleep(random.uniform(5, 10))
+                if "login" in driver.current_url.lower() or "登录" in driver.title:
+                    print("❌ 登录失败或页面未正确跳转，请检查用户名和密码。")
+                    return None
+                else:
+                    print("✅ 账号密码登录成功！")
+                    # 登录成功后保存Cookie（覆盖旧的）
+                    if use_cookies:
+                        save_cookies_to_file(driver)
             else:
-                print("登录成功。")
-        else:
-            print("未检测到登录界面，假设已登录或无需登录。")
+                print("未检测到登录界面，假设已登录或无需登录。")
         
         driver.get("https://sim.3ue.com/#/digitalsuite/home")
         time.sleep(random.uniform(10, 15)) # 增加等待页面跳转到 sim.3ue.com/#/digitalsuite/home 的时间
+        
+        # 检查并等待 Cloudflare 验证（关键步骤）
+        if not wait_for_cloudflare_bypass(driver, timeout=60):
+            print("⚠️  Cloudflare 验证未通过，但尝试继续...")
         
         # 此时应该已经位于 sim.3ue.com/#/digitalsuite/home，准备进行搜索
         print("已进入SimilarWeb数字套件首页，准备进行搜索。")
@@ -102,6 +266,10 @@ def search_and_scrape_website_data(driver, website_to_search, data_url_template)
         print(f"将直接导航到: {target_data_page_url}")
         driver.get(target_data_page_url)
         time.sleep(random.uniform(3, 7)) # 额外等待数据页面加载
+        
+        # 检查 Cloudflare 验证
+        if not wait_for_cloudflare_bypass(driver, timeout=30):
+            print("⚠️  检测到 Cloudflare 验证，但尝试继续...")
 
         # 等待网站性能数据页面加载（使用更长的固定等待时间，替代不稳定的元素检测）
         print("正在等待网站性能数据页面加载...")
@@ -360,9 +528,9 @@ if __name__ == "__main__":
     your_username = "sloth" 
     your_password = "b35iNGpgZcrd!Ge"
     
-    # URLs文件路径
-    urls_file_path = r"E:\aiUrlDataBySimilarWeb\urls.txt"
-    output_file_path = r"E:\aiUrlDataBySimilarWeb\similarweb_data.txt"
+    # URLs文件路径（使用相对路径，更灵活）
+    urls_file_path = "urls.txt"
+    output_file_path = "similarweb_data.txt"
 
     # SimilarWeb数据页面的URL模板，使用{website_name}作为占位符
     base_data_url_template = "https://sim.3ue.com/#/digitalsuite/websiteanalysis/overview/website-performance/*/999/2025.01-2025.08?webSource=Total&key={website_name}"
@@ -370,7 +538,8 @@ if __name__ == "__main__":
     driver_instance = None
     try:
         print("正在启动浏览器并准备进行网站搜索...")
-        driver_instance = initialize_browser_and_prepare_for_search(initial_entry_url, your_username, your_password)
+        # use_cookies=True 表示启用Cookie登录功能
+        driver_instance = initialize_browser_and_prepare_for_search(initial_entry_url, your_username, your_password, use_cookies=True)
 
         if driver_instance:
             print("浏览器初始化和准备完成。开始循环抓取数据...")

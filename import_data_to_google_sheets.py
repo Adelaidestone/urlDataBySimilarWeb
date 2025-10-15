@@ -4,10 +4,15 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 from urllib.parse import urlparse
 import time
+import sys
+import io
 
-# 配置文件路径
-txt_file_path = r'E:\aiUrlDataBySimilarWeb\similarweb_data.txt'
-credentials_file = r'D:\Users\Mussy\Desktop\refined-magpie-474208-i2-6ead78929739.json'
+# 设置控制台输出编码为 UTF-8，避免 Windows 下的编码问题
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# 配置文件路径（使用相对路径）
+txt_file_path = 'similarweb_data.txt'
+credentials_file = 'refined-magpie-474208-i2-6ead78929739.json'  # 请将凭证文件放在项目根目录
 sheet_name = '产品信息列表'
 worksheet_index = 1  # 第2个工作表（索引从0开始）
 batch_size = 30  # 每30行批量更新一次

@@ -2,10 +2,15 @@ import json
 import openpyxl
 from datetime import datetime
 from urllib.parse import urlparse
+import sys
+import io
 
-# 文件路径
-txt_file_path = r'E:\aiUrlDataBySimilarWeb\similarweb_data.txt'
-excel_file_path = r'D:\Users\Mussy\Desktop\similarweb_data.xlsx'
+# 设置控制台输出编码为 UTF-8
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# 文件路径（使用相对路径）
+txt_file_path = 'similarweb_data.txt'
+excel_file_path = 'similarweb_data.xlsx'  # Excel文件将保存在项目根目录
 
 def extract_domain(url):
     """

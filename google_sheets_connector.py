@@ -1,8 +1,13 @@
 import gspread
 from google.oauth2.service_account import Credentials
+import sys
+import io
 
-# 配置
-credentials_file = r'D:\Users\Mussy\Desktop\refined-magpie-474208-i2-6ead78929739.json'
+# 设置控制台输出编码为 UTF-8
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# 配置（使用相对路径）
+credentials_file = 'refined-magpie-474208-i2-6ead78929739.json'  # 请将凭证文件放在项目根目录
 sheet_name = '产品信息列表'  # 通过表格名称打开
 
 # 设置权限范围
